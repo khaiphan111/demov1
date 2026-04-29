@@ -47,6 +47,16 @@ function UserPanel() {
       setError("Có lỗi xảy ra khi xác thực key!");
     } else {
       setIsLoggedIn(true);
+      // Gửi thông báo về Telegram thông qua API
+      try {
+        await fetch('/api/notify', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ keyCode: data.key_code })
+        });
+      } catch (err) {
+        console.error("Lỗi gửi thông báo:", err);
+      }
     }
     setLoading(false);
   };
