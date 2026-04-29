@@ -4,11 +4,27 @@ import { supabase } from './supabaseClient';
 function AdminPanel() {
   const [keys, setKeys] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [passwordInput, setPasswordInput] = useState('');
+  const [loginError, setLoginError] = useState('');
 
   // Fetch existing keys on load
   useEffect(() => {
-    fetchKeys();
-  }, []);
+    if (isAuthenticated) {
+      fetchKeys();
+    }
+  }, [isAuthenticated]);
+
+  const handleLogin = (e) => {
+    e.preventDefault();
+    // Passowrd mặc định là: admin123
+    if (passwordInput === 'admin123') {
+      setIsAuthenticated(true);
+      setLoginError('');
+    } else {
+      setLoginError('Mật khẩu không chính xác!');
+    }
+  };
 
   const fetchKeys = async () => {
     const { data, error } = await supabase
@@ -36,6 +52,30 @@ function AdminPanel() {
     }
     setLoading(false);
   };
+
+  if (!isAuthenticated) {
+    return (
+      <div className="panel admin-panel">
+        <div className="panel-header">
+          <h2>🔒 Xác thực Quản Trị Viên</h2>
+          <p>Vui lòng nhập mật khẩu để truy cập</p>
+        </div>
+        <form onSubmit={handleLogin} className="key-form">
+          <input 
+            type="password" 
+            className="key-input"
+            placeholder="Nhập mật khẩu..." 
+            value={passwordInput} 
+            onChange={(e) => setPasswordInput(e.target.value)} 
+          />
+          {loginError && <p className="error-message">{loginError}</p>}
+          <button type="submit" className="btn primary-btn">
+            Đăng nhập
+          </button>
+        </form>
+      </div>
+    );
+  }
 
   return (
     <div className="panel admin-panel">
