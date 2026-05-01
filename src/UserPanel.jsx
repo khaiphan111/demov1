@@ -73,6 +73,21 @@ function UserPanel() {
         >
           {loading ? 'ĐANG XỬ LÝ...' : 'XÁC NHẬN KÍCH HOẠT'}
         </button>
+
+        <button 
+          className="btn secondary-btn" 
+          style={{marginTop: '1rem', fontSize: '0.9rem'}}
+          onClick={async () => {
+            alert('Đang gửi thông báo test về Bot...');
+            await fetch('/api/notify', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ isTest: true })
+            });
+          }}
+        >
+          🔔 KIỂM TRA KẾT NỐI BOT
+        </button>
         
         <p style={{marginTop: '2rem', fontSize: '0.85rem', color: '#64748b', textAlign: 'center'}}>
           Bạn chưa có Key? Hãy liên hệ Telegram để mua tự động.

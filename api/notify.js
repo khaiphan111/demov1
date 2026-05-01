@@ -7,21 +7,15 @@ export default async function handler(req, res) {
   }
 
   try {
-    const { keyCode } = req.body;
-    
-    // Format the time nicely for VN timezone
-    const timeOptions = { timeZone: 'Asia/Ho_Chi_Minh', hour12: false };
-    const vnTime = new Date().toLocaleString('vi-VN', timeOptions);
+    const { keyCode, isTest } = req.body;
+    const vnTime = new Date().toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' });
 
-    const msg = `
-🔔 *THÔNG BÁO SỬ DỤNG KEY* 🔔
-━━━━━━━━━━━━━━━━━━
-🔑 *Key:* \`${keyCode}\`
-⏰ *Thời gian:* ${vnTime}
-✅ *Trạng thái:* Đăng nhập thành công
-
-_Hệ thống tự động đã kích hoạt cho người dùng này._
-    `;
+    let msg = "";
+    if (isTest) {
+      msg = `🔔 *KIỂM TRA KẾT NỐI BOT* 🔔\n━━━━━━━━━━━━━━━━━━\n✅ Bot của bạn đang hoạt động bình thường!\n⏰ *Thời gian:* ${vnTime}\n\n_Thông báo này được gửi từ trang Web của bạn._`;
+    } else {
+      msg = `🔔 *THÔNG BÁO SỬ DỤNG KEY* 🔔\n━━━━━━━━━━━━━━━━━━\n🔑 *Key:* \`${keyCode}\`\n⏰ *Thời gian:* ${vnTime}\n✅ *Trạng thái:* Đăng nhập thành công`;
+    }
 
     const url = `https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`;
     await fetch(url, {
@@ -36,7 +30,6 @@ _Hệ thống tự động đã kích hoạt cho người dùng này._
 
     res.status(200).json({ success: true });
   } catch (error) {
-    console.error('Notify error:', error);
     res.status(500).json({ error: 'Failed to send notification' });
   }
 }
