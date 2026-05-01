@@ -1,7 +1,8 @@
 import { createClient } from '@supabase/supabase-js';
 import { createRequire } from 'module';
 const require = createRequire(import.meta.url);
-const PayOS = require('@payos/node');
+const PayOSLib = require('@payos/node');
+const PayOS = PayOSLib.PayOS || PayOSLib;
 
 const TELEGRAM_TOKEN = '8319448508:AAG8OKP4aZ10g0kHA1BwijC_pn_PJheSEPs';
 const ADMIN_CHAT_ID = '5964340237';
