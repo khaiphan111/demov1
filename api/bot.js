@@ -24,8 +24,16 @@ export default async function handler(req, res) {
     if (!body) return res.status(200).json({ ok: true });
 
     if (!payos) {
-      const PayOSConstructor = PayOS.default || PayOS;
-      payos = new PayOSConstructor(PAYOS_CLIENT_ID, PAYOS_API_KEY, PAYOS_CHECKSUM_KEY);
+      try {
+        const PayOSClass = PayOS.PayOS || PayOS.default || PayOS;
+        if (typeof PayOSClass !== 'function') {
+           throw new Error(`Không tìm thấy hàm tạo PayOS. Kiểu hiện tại: ${typeof PayOSClass}. Nội dung: ${JSON.stringify(PayOS)}`);
+        }
+        payos = new PayOSClass(PAYOS_CLIENT_ID, PAYOS_API_KEY, PAYOS_CHECKSUM_KEY);
+      } catch (e) {
+        await sendTelegramMessage(ADMIN_CHAT_ID, `❌ Lỗi khởi tạo PayOS: ${e.message}`);
+        throw e;
+      }
     }
     if (!supabase) supabase = createClient(supabaseUrl, supabaseKey);
 
