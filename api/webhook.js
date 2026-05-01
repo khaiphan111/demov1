@@ -2,7 +2,7 @@ import { createClient } from '@supabase/supabase-js';
 import { PayOS } from '@payos/node';
 
 const TELEGRAM_TOKEN = '8319448508:AAG8OKP4aZ10g0kHA1BwijC_pn_PJheSEPs';
-const PAYOS_CHECKSUM_KEY = '12d66715b54bae5a546de73716136378e9087999';
+const PAYOS_CHECKSUM_KEY = '12d66715b54bae5a546de73716136378e9087999ebb94dd4e50ca209dbca3872';
 
 const supabaseUrl = 'https://jfakdzjxphypjtfwwoqp.supabase.co';
 const supabaseKey = 'sb_publishable_CEOW9PCaWqX4DCLE0PoJkg_Y-9pDxbe';

@@ -6,7 +6,7 @@ const ADMIN_CHAT_ID = '5964340237';
 
 const PAYOS_CLIENT_ID = '9a07d699-4a29-4524-a6eb-ee323c2c83e7';
 const PAYOS_API_KEY = '6880e97f-002b-48f0-a18f-10444ed50bcd';
-const PAYOS_CHECKSUM_KEY = '12d66715b54bae5a546de73716136378e9087999';
+const PAYOS_CHECKSUM_KEY = '12d66715b54bae5a546de73716136378e9087999ebb94dd4e50ca209dbca3872';
 
 const supabaseUrl = 'https://jfakdzjxphypjtfwwoqp.supabase.co';
 const supabaseKey = 'sb_publishable_CEOW9PCaWqX4DCLE0PoJkg_Y-9pDxbe';
