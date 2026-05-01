@@ -25,10 +25,7 @@ export default async function handler(req, res) {
 
     if (!payos) {
       try {
-        const PayOSClass = PayOS.PayOS || PayOS.default || PayOS;
-        if (typeof PayOSClass !== 'function') {
-           throw new Error(`Không tìm thấy hàm tạo PayOS. Kiểu hiện tại: ${typeof PayOSClass}. Nội dung: ${JSON.stringify(PayOS)}`);
-        }
+        const PayOSClass = PayOS.default || PayOS;
         payos = new PayOSClass({
           clientId: PAYOS_CLIENT_ID,
           apiKey: PAYOS_API_KEY,
