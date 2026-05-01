@@ -14,36 +14,46 @@ const supabaseKey = 'sb_publishable_CEOW9PCaWqX4DCLE0PoJkg_Y-9pDxbe';
 const supabase = createClient(supabaseUrl, supabaseKey);
 
 export default async function handler(req, res) {
+  // PayOS luôn yêu cầu trả về 200 nhanh chóng
   if (req.method !== 'POST') {
     return res.status(200).send('Webhook is active');
   }
 
   try {
     const body = req.body;
-    
-    // Kiểm tra nếu là gói tin test của PayOS
-    if (body.desc === 'confirm-webhook' || !body.data) {
-      return res.status(200).json({ success: true, message: 'Webhook confirmed' });
+    console.log("Dữ liệu Webhook nhận được:", JSON.stringify(body));
+
+    // 1. Kiểm tra nhanh gói tin test/confirm
+    if (!body || body.desc === 'confirm-webhook' || !body.data) {
+      return res.status(200).json({ success: true, message: 'Confirmed' });
     }
 
-    // 1. Verify Webhook
-    const webhookData = payos.verifyPaymentWebhookData(body);
+    // 2. Xác thực chữ ký PayOS
+    let webhookData;
+    try {
+      webhookData = payos.verifyPaymentWebhookData(body);
+    } catch (e) {
+      console.error("Lỗi xác thực chữ ký:", e.message);
+      // Vẫn trả về 200 để tránh lỗi 500 trên dashboard PayOS
+      return res.status(200).json({ success: false, message: 'Invalid signature' });
+    }
 
     if (webhookData && webhookData.orderCode) {
       const orderCode = webhookData.orderCode;
       
-      // 2. Tìm đơn hàng
-      const { data: paymentRecord, error: fetchError } = await supabase
+      // Tìm đơn hàng đang chờ
+      const { data: paymentRecord } = await supabase
         .from('payments')
         .select('*')
         .eq('order_code', orderCode)
         .eq('status', 'pending')
         .single();
 
-      if (paymentRecord && !fetchError) {
+      if (paymentRecord) {
         const type = paymentRecord.key_type_requested;
         const newKeyCode = 'KEY-' + type.toUpperCase() + '-' + Math.random().toString(36).substring(2, 10).toUpperCase();
 
+        // Lưu key mới
         await supabase.from('access_keys').insert({
           key_code: newKeyCode,
           key_type: type,
@@ -51,29 +61,22 @@ export default async function handler(req, res) {
           is_active: true
         });
 
+        // Cập nhật trạng thái thanh toán
         await supabase.from('payments').update({
           status: 'completed',
           key_generated: newKeyCode,
           completed_at: new Date().toISOString()
         }).eq('id', paymentRecord.id);
 
-        const successMsg = `
-✅ *THANH TOÁN THÀNH CÔNG* ✅
-━━━━━━━━━━━━━━━━━━
-Mã đơn: \`${orderCode}\`
-🔑 *Key:* \`${newKeyCode}\`
-📦 Gói: *${type.toUpperCase()}*
-
-_Cảm ơn bạn đã sử dụng dịch vụ!_
-        `;
+        // Nhắn tin cho khách
+        const successMsg = `✅ *THANH TOÁN THÀNH CÔNG*\n━━━━━━━━━━━━━━━━━━\nMã đơn: \`${orderCode}\`\n🔑 *Key:* \`${newKeyCode}\`\n📦 Gói: *${type.toUpperCase()}*\n\n_Cảm ơn bạn đã sử dụng dịch vụ!_`;
         await sendTelegramMessage(paymentRecord.telegram_id, successMsg);
       }
     }
 
     return res.status(200).json({ success: true });
   } catch (error) {
-    console.error('Webhook Error:', error);
-    // Luôn trả về 200 để PayOS không báo lỗi đỏ
+    console.error('Lỗi tổng quát Webhook:', error);
     return res.status(200).json({ success: false, error: error.message });
   }
 }
