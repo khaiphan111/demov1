@@ -129,9 +129,26 @@ async function handlePaymentRequest(chatId, type) {
 
 async function handleSetPrice(chatId, text) {
   const parts = text.split(' ');
-  if (parts.length < 3) return;
-  await supabase.from('key_prices').update({ price: parseInt(parts[2]) }).eq('key_type', parts[1]);
-  await sendTelegramMessage(chatId, `✅ Đã cập nhật giá gói *${parts[1]}*`);
+  if (parts.length < 3) return await sendTelegramMessage(chatId, "Sử dụng: `/setprice [loại] [giá]`\nVí dụ: `/setprice month 150000`.");
+  
+  const type = parts[1];
+  const price = parseInt(parts[2]);
+  const name = type === 'trial' ? 'Bản dùng thử' : 
+               type === 'day' ? 'Gói 1 Ngày' : 
+               type === 'month' ? 'Gói 1 Tháng' : 
+               type === 'forever' ? 'Gói Vĩnh Viễn' : `Gói ${type}`;
+
+  const { error } = await supabase.from('key_prices').upsert({ 
+    key_type: type, 
+    price: price,
+    name: name
+  }, { onConflict: 'key_type' });
+
+  if (error) {
+    await sendTelegramMessage(chatId, "❌ Lỗi: " + error.message);
+  } else {
+    await sendTelegramMessage(chatId, `✅ Đã thiết lập giá cho *${name}* là *${price.toLocaleString('vi-VN')}đ*`);
+  }
 }
 
 async function handleManualGenKey(chatId) {
