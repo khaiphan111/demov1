@@ -58,13 +58,20 @@ export default async function handler(req, res) {
 
       if (text === '/start') {
         await sendWelcomeMessage(chatId);
-      } else if (text === '/buy') {
+      } 
+      else if (text === '/id') {
+        await sendTelegramMessage(chatId, `🆔 ID của bạn là: \`${chatId}\``);
+      }
+      else if (text === '/buy') {
         await sendPriceList(chatId);
-      } else if (text === '/prices') {
+      } 
+      else if (text === '/prices') {
         await sendPriceList(chatId, false);
-      } else if (chatId === ADMIN_CHAT_ID && text.startsWith('/setprice')) {
+      } 
+      else if (text.startsWith('/setprice')) {
         await handleSetPrice(chatId, text);
-      } else if (chatId === ADMIN_CHAT_ID && text === '/taokey') {
+      } 
+      else if (chatId === ADMIN_CHAT_ID && text === '/taokey') {
         await handleManualGenKey(chatId);
       }
     }
