@@ -1,101 +1,83 @@
-import { useState } from 'react';
-import { supabase } from './supabaseClient';
+import { useState, useEffect } from 'react';
+import { createClient } from '@supabase/supabase-js';
+
+const supabaseUrl = 'https://jfakdzjxphypjtfwwoqp.supabase.co';
+const supabaseKey = 'sb_publishable_CEOW9PCaWqX4DCLE0PoJkg_Y-9pDxbe';
+const supabase = createClient(supabaseUrl, supabaseKey);
 
 function UserPanel() {
-  const [inputKey, setInputKey] = useState('');
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
-  const [loading, setLoading] = useState(false);
+  const [keyCode, setKeyCode] = useState('');
   const [error, setError] = useState('');
+  const [success, setSuccess] = useState(false);
+  const [loading, setLoading] = useState(false);
 
-  const checkKey = async (e) => {
-    e.preventDefault();
-    setError('');
-    
-    if (!inputKey.trim()) {
-      setError('Vui lòng nhập mã Key!');
-      return;
-    }
-
+  const handleVerify = async () => {
+    if (!keyCode) return;
     setLoading(true);
+    setError('');
 
-    // Truy vấn xem key có trong database không
-    const { data, error: fetchError } = await supabase
-      .from('access_keys')
-      .select('*')
-      .eq('key_code', inputKey.trim())
-      .single();
+    try {
+      const { data, error: fetchError } = await supabase
+        .from('access_keys')
+        .select('*')
+        .eq('key_code', keyCode)
+        .single();
 
-    if (fetchError || !data) {
-      setError("Key không hợp lệ hoặc không tồn tại!");
-      setLoading(false);
-      return;
-    }
-
-    if (data.is_used) {
-      setError("Key này đã được sử dụng!");
-      setLoading(false);
-      return;
-    }
-
-    // Nếu key đúng và chưa dùng, cập nhật trạng thái key thành "đã dùng"
-    const { error: updateError } = await supabase
-      .from('access_keys')
-      .update({ is_used: true })
-      .eq('id', data.id);
-
-    if (updateError) {
-      setError("Có lỗi xảy ra khi xác thực key!");
-    } else {
-      setIsLoggedIn(true);
-      // Gửi thông báo về Telegram thông qua API
-      try {
-        await fetch('/api/notify', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ keyCode: data.key_code })
-        });
-      } catch (err) {
-        console.error("Lỗi gửi thông báo:", err);
+      if (fetchError || !data) {
+        setError('Mã kích hoạt không tồn tại hoặc không hợp lệ.');
+      } else if (!data.is_active) {
+        setError('Mã này đã bị vô hiệu hóa bởi quản trị viên.');
+      } else {
+        setSuccess(true);
       }
+    } catch (err) {
+      setError('Đã xảy ra lỗi kết nối. Vui lòng thử lại.');
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
-  if (isLoggedIn) {
+  if (success) {
     return (
-      <div className="panel user-panel success-panel">
+      <div className="panel success-panel">
         <div className="success-icon">✨</div>
-        <h2>Đăng nhập thành công!</h2>
-        <p>Chào mừng bạn đến với khu vực nội dung VIP.</p>
-        <button className="btn secondary-btn" onClick={() => setIsLoggedIn(false)}>Đăng xuất</button>
+        <h2>Xác Minh Thành Công!</h2>
+        <p style={{color: '#94a3b8', marginBottom: '2rem'}}>Chào mừng bạn đến với hệ thống FB Auto Reg Pro.</p>
+        <button className="btn action-btn" onClick={() => setSuccess(false)}>QUAY LẠI</button>
       </div>
     );
   }
 
   return (
-    <div className="panel user-panel">
+    <div className="panel">
       <div className="panel-header">
-        <h2>👤 Khu vực Người dùng</h2>
-        <p>Nhập mã kích hoạt của bạn để tiếp tục</p>
+        <h2>Kích Hoạt Bản Quyền</h2>
+        <p>Vui lòng nhập mã Key bạn đã mua để bắt đầu</p>
       </div>
-      
-      <form onSubmit={checkKey} className="key-form">
+
+      <div className="key-form">
         <input 
           type="text" 
           className="key-input"
-          placeholder="VD: KEY-ABCD1234" 
-          value={inputKey} 
-          onChange={(e) => setInputKey(e.target.value.toUpperCase())} 
+          placeholder="Dán mã Key tại đây..."
+          value={keyCode}
+          onChange={(e) => setKeyCode(e.target.value.toUpperCase())}
         />
-        {error && <p className="error-message">{error}</p>}
+        
+        {error && <p className="error-message" style={{marginBottom: '1rem', color: '#f43f5e'}}>{error}</p>}
+
         <button 
-          type="submit" 
-          className="btn action-btn"
-          disabled={loading}
+          className="btn action-btn" 
+          onClick={handleVerify}
+          disabled={loading || !keyCode}
         >
-          {loading ? 'Đang kiểm tra...' : 'Truy cập ngay'}
+          {loading ? 'ĐANG XỬ LÝ...' : 'XÁC NHẬN KÍCH HOẠT'}
         </button>
-      </form>
+        
+        <p style={{marginTop: '2rem', fontSize: '0.85rem', color: '#64748b', textAlign: 'center'}}>
+          Bạn chưa có Key? Hãy liên hệ Telegram để mua tự động.
+        </p>
+      </div>
     </div>
   );
 }

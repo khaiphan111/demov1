@@ -1,114 +1,69 @@
 import { useState, useEffect } from 'react';
-import { supabase } from './supabaseClient';
+import { createClient } from '@supabase/supabase-js';
+
+const supabaseUrl = 'https://jfakdzjxphypjtfwwoqp.supabase.co';
+const supabaseKey = 'sb_publishable_CEOW9PCaWqX4DCLE0PoJkg_Y-9pDxbe';
+const supabase = createClient(supabaseUrl, supabaseKey);
 
 function AdminPanel() {
   const [keys, setKeys] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [passwordInput, setPasswordInput] = useState('');
-  const [loginError, setLoginError] = useState('');
 
-  // Fetch existing keys on load
   useEffect(() => {
-    if (isAuthenticated) {
-      fetchKeys();
-    }
-  }, [isAuthenticated]);
-
-  const handleLogin = (e) => {
-    e.preventDefault();
-    // Passowrd mặc định là: admin123
-    if (passwordInput === 'admin123') {
-      setIsAuthenticated(true);
-      setLoginError('');
-    } else {
-      setLoginError('Mật khẩu không chính xác!');
-    }
-  };
+    fetchKeys();
+  }, []);
 
   const fetchKeys = async () => {
-    const { data, error } = await supabase
-      .from('access_keys')
-      .select('*')
-      .order('created_at', { ascending: false });
-    if (!error && data) {
-      setKeys(data);
-    }
-  };
-
-  const generateKey = async () => {
     setLoading(true);
-    const newKeyCode = 'KEY-' + Math.random().toString(36).substring(2, 10).toUpperCase();
-    
-    const { data, error } = await supabase
-      .from('access_keys')
-      .insert([{ key_code: newKeyCode, is_used: false }])
-      .select();
-
-    if (error) {
-      alert("Lỗi tạo key: " + error.message);
-    } else if (data) {
-      setKeys([data[0], ...keys]);
-    }
+    const { data } = await supabase.from('access_keys').select('*').order('created_at', { ascending: false });
+    if (data) setKeys(data);
     setLoading(false);
   };
 
-  if (!isAuthenticated) {
-    return (
-      <div className="panel admin-panel">
-        <div className="panel-header">
-          <h2>🔒 Xác thực Quản Trị Viên</h2>
-          <p>Vui lòng nhập mật khẩu để truy cập</p>
-        </div>
-        <form onSubmit={handleLogin} className="key-form">
-          <input 
-            type="password" 
-            className="key-input"
-            placeholder="Nhập mật khẩu..." 
-            value={passwordInput} 
-            onChange={(e) => setPasswordInput(e.target.value)} 
-          />
-          {loginError && <p className="error-message">{loginError}</p>}
-          <button type="submit" className="btn primary-btn">
-            Đăng nhập
-          </button>
-        </form>
-      </div>
-    );
-  }
-
   return (
-    <div className="panel admin-panel">
+    <div className="panel" style={{maxWidth: '800px'}}>
       <div className="panel-header">
-        <h2>🛠️ Quản trị viên (Admin)</h2>
-        <p>Tạo và quản lý các mã truy cập</p>
+        <span className="admin-badge">Hệ Thống Admin</span>
+        <h2>Quản Lý License Key</h2>
+        <p>Danh sách toàn bộ Key đang hoạt động trên hệ thống</p>
       </div>
-      
-      <button 
-        className="btn primary-btn" 
-        onClick={generateKey}
-        disabled={loading}
-      >
-        {loading ? 'Đang tạo...' : '+ Tạo mã Key mới'}
-      </button>
-      
-      <div className="keys-container">
-        <h3>Danh sách Key hiện có:</h3>
-        {keys.length === 0 ? (
-          <p className="empty-state">Chưa có mã key nào được tạo.</p>
+
+      <div style={{maxHeight: '400px', overflowY: 'auto', marginBottom: '1.5rem'}}>
+        {keys.length > 0 ? (
+          <table style={{width: '100%', borderCollapse: 'collapse', textAlign: 'left'}}>
+            <thead>
+              <tr style={{borderBottom: '1px solid var(--card-border)', color: 'var(--text-dim)'}}>
+                <th style={{padding: '12px'}}>KEY CODE</th>
+                <th style={{padding: '12px'}}>LOẠI</th>
+                <th style={{padding: '12px'}}>TRẠNG THÁI</th>
+              </tr>
+            </thead>
+            <tbody>
+              {keys.map(k => (
+                <tr key={k.id} style={{borderBottom: '1px solid rgba(255,255,255,0.05)'}}>
+                  <td style={{padding: '12px', fontFamily: 'monospace'}}>{k.key_code}</td>
+                  <td style={{padding: '12px'}}>{k.key_type}</td>
+                  <td style={{padding: '12px'}}>
+                    <span style={{
+                      color: k.is_used ? '#f43f5e' : '#10b981',
+                      fontSize: '0.8rem',
+                      fontWeight: 'bold'
+                    }}>
+                      {k.is_used ? 'ĐÃ DÙNG' : 'CHƯA DÙNG'}
+                    </span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         ) : (
-          <ul className="key-list">
-            {keys.map(k => (
-              <li key={k.id} className={`key-item ${k.is_used ? 'used' : 'active'}`}>
-                <span className="key-code">{k.key_code}</span>
-                <span className="key-status">
-                  {k.is_used ? '🔴 Đã sử dụng' : '🟢 Sẵn sàng'}
-                </span>
-              </li>
-            ))}
-          </ul>
+          <p style={{textAlign: 'center', color: 'var(--text-dim)', padding: '2rem'}}>Đang tải dữ liệu...</p>
         )}
       </div>
+
+      <button className="btn secondary-btn" onClick={fetchKeys} disabled={loading}>
+        LÀM MỚI DANH SÁCH
+      </button>
     </div>
   );
 }
