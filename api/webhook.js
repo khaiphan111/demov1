@@ -14,7 +14,6 @@ const supabaseKey = 'sb_publishable_CEOW9PCaWqX4DCLE0PoJkg_Y-9pDxbe';
 const supabase = createClient(supabaseUrl, supabaseKey);
 
 export default async function handler(req, res) {
-  // PayOS sends a POST request to this webhook
   if (req.method !== 'POST') {
     return res.status(200).send('Webhook is active');
   }
@@ -22,14 +21,18 @@ export default async function handler(req, res) {
   try {
     const body = req.body;
     
-    // 1. Verify Webhook (Standard PayOS Verification)
-    // Note: In some environments, raw body is needed.
+    // Kiểm tra nếu là gói tin test của PayOS
+    if (body.desc === 'confirm-webhook' || !body.data) {
+      return res.status(200).json({ success: true, message: 'Webhook confirmed' });
+    }
+
+    // 1. Verify Webhook
     const webhookData = payos.verifyPaymentWebhookData(body);
 
-    if (webhookData.success || webhookData.desc === 'success') {
+    if (webhookData && webhookData.orderCode) {
       const orderCode = webhookData.orderCode;
       
-      // 2. Find the pending payment in Database
+      // 2. Tìm đơn hàng
       const { data: paymentRecord, error: fetchError } = await supabase
         .from('payments')
         .select('*')
@@ -38,11 +41,9 @@ export default async function handler(req, res) {
         .single();
 
       if (paymentRecord && !fetchError) {
-        // 3. Payment is valid! Generate the Key.
         const type = paymentRecord.key_type_requested;
         const newKeyCode = 'KEY-' + type.toUpperCase() + '-' + Math.random().toString(36).substring(2, 10).toUpperCase();
 
-        // 4. Save Key to access_keys table
         await supabase.from('access_keys').insert({
           key_code: newKeyCode,
           key_type: type,
@@ -50,40 +51,42 @@ export default async function handler(req, res) {
           is_active: true
         });
 
-        // 5. Update payment status
         await supabase.from('payments').update({
           status: 'completed',
           key_generated: newKeyCode,
           completed_at: new Date().toISOString()
         }).eq('id', paymentRecord.id);
 
-        // 6. Notify User via Telegram
         const successMsg = `
 ✅ *THANH TOÁN THÀNH CÔNG* ✅
 ━━━━━━━━━━━━━━━━━━
-Cảm ơn bạn đã ủng hộ! Đây là mã kích hoạt của bạn:
-
+Mã đơn: \`${orderCode}\`
 🔑 *Key:* \`${newKeyCode}\`
 📦 Gói: *${type.toUpperCase()}*
 
-_Hãy copy mã này và nhập vào Tool để bắt đầu sử dụng._
+_Cảm ơn bạn đã sử dụng dịch vụ!_
         `;
         await sendTelegramMessage(paymentRecord.telegram_id, successMsg);
       }
     }
 
-    res.status(200).json({ success: true });
+    return res.status(200).json({ success: true });
   } catch (error) {
     console.error('Webhook Error:', error);
-    res.status(200).json({ success: false }); // Always return 200 to PayOS
+    // Luôn trả về 200 để PayOS không báo lỗi đỏ
+    return res.status(200).json({ success: false, error: error.message });
   }
 }
 
 async function sendTelegramMessage(chatId, text) {
   const url = `https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`;
-  await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ chat_id: chatId, text, parse_mode: 'Markdown' })
-  });
+  try {
+    await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chat_id: chatId, text, parse_mode: 'Markdown' })
+    });
+  } catch (e) {
+    console.error("Lỗi gửi tin nhắn Telegram:", e);
+  }
 }
