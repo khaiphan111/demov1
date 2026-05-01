@@ -15,168 +15,112 @@ let payos;
 let supabase;
 
 export default async function handler(req, res) {
-  if (req.method !== 'POST') {
-    return res.status(200).send('Bot is active');
-  }
+  if (req.method !== 'POST') return res.status(200).send('Bot OK');
 
   try {
     const body = req.body;
-    if (!body) return res.status(200).json({ ok: true });
+    if (!supabase) supabase = createClient(supabaseUrl, supabaseKey);
 
+    // Khởi tạo PayOS cực kỳ an toàn
     if (!payos) {
       try {
-        const PayOSClass = PayOS.default || PayOS;
+        // Log thông tin thư viện để debug
+        const keys = Object.keys(PayOS);
+        console.log("PayOS keys:", keys);
+
+        const PayOSClass = PayOS.PayOS || (typeof PayOS === 'function' ? PayOS : PayOS.default);
+        
+        if (typeof PayOSClass !== 'function') {
+          await sendTelegramMessage(ADMIN_CHAT_ID, `🔍 *DEBUG:* PayOS type: ${typeof PayOS}\nKeys: ${keys.join(', ')}`);
+          throw new Error("Không thể tìm thấy class PayOS");
+        }
+
         payos = new PayOSClass({
           clientId: PAYOS_CLIENT_ID,
           apiKey: PAYOS_API_KEY,
           checksumKey: PAYOS_CHECKSUM_KEY
         });
-      } catch (e) {
-        await sendTelegramMessage(ADMIN_CHAT_ID, `❌ Lỗi khởi tạo PayOS: ${e.message}`);
-        throw e;
+      } catch (err) {
+        await sendTelegramMessage(ADMIN_CHAT_ID, `❌ Lỗi khởi tạo: ${err.message}`);
+        return res.status(200).json({ ok: true });
       }
     }
-    if (!supabase) supabase = createClient(supabaseUrl, supabaseKey);
 
     if (body.callback_query) {
-      const callbackQuery = body.callback_query;
-      const chatId = callbackQuery.message.chat.id.toString();
-      const data = callbackQuery.data;
-      if (data.startsWith('buy_')) {
-        const type = data.replace('buy_', '');
-        await handlePaymentRequest(chatId, type);
-      }
+      const chatId = body.callback_query.message.chat.id.toString();
+      const data = body.callback_query.data;
+      if (data.startsWith('buy_')) await handlePaymentRequest(chatId, data.replace('buy_', ''));
       return res.status(200).json({ ok: true });
     }
 
     if (body.message && body.message.text) {
       const chatId = body.message.chat.id.toString();
       const text = body.message.text.trim();
-
-      if (text === '/start') {
-        await sendWelcomeMessage(chatId);
-      } 
-      else if (text === '/id') {
-        await sendTelegramMessage(chatId, `🆔 ID của bạn là: \`${chatId}\``);
-      }
-      else if (text === '/buy') {
-        await sendPriceList(chatId);
-      } 
-      else if (text === '/prices') {
-        await sendPriceList(chatId, false);
-      } 
-      else if (text.startsWith('/setprice')) {
-        await handleSetPrice(chatId, text);
-      } 
-      else if (chatId === ADMIN_CHAT_ID && text === '/taokey') {
-        await handleManualGenKey(chatId);
-      }
+      if (text === '/start') await sendWelcomeMessage(chatId);
+      else if (text === '/id') await sendTelegramMessage(chatId, `🆔 ID: \`${chatId}\``);
+      else if (text === '/buy' || text === '/prices') await sendPriceList(chatId, text === '/buy');
+      else if (text.startsWith('/setprice')) await handleSetPrice(chatId, text);
+      else if (chatId === ADMIN_CHAT_ID && text === '/taokey') await handleManualGenKey(chatId);
     }
 
     return res.status(200).json({ ok: true });
   } catch (error) {
-    console.error('Bot Runtime Error:', error);
-    // Gửi lỗi về Telegram cho Admin để biết lỗi gì
-    try {
-      await sendTelegramMessage(ADMIN_CHAT_ID, `⚠️ *BOT ERROR* ⚠️\n━━━━━━━━━━━━━━━━━━\n\`${error.message}\``);
-    } catch (e) {}
-    return res.status(200).json({ ok: true }); // Vẫn trả về 200 cho Telegram
+    await sendTelegramMessage(ADMIN_CHAT_ID, `⚠️ *ERROR:* ${error.message}`);
+    return res.status(200).json({ ok: true });
   }
 }
 
 async function sendWelcomeMessage(chatId) {
-  const msg = `👋 *Chào mừng bạn đến với FB Auto Reg Pro!*\n━━━━━━━━━━━━━━━━━━\n🛒 Gõ /buy để mua Key.\n🛠 Gõ /prices để xem giá.`;
-  await sendTelegramMessage(chatId, msg);
+  await sendTelegramMessage(chatId, `👋 *Chào mừng bạn!*\n━━━━━━━━━━━━━━━━━━\n🛒 Gõ /buy để mua Key.`);
 }
 
-async function sendPriceList(chatId, showBuyButtons = true) {
-  const { data: prices, error } = await supabase.from('key_prices').select('*').order('price', { ascending: true });
-  if (error || !prices || prices.length === 0) {
-    return await sendTelegramMessage(chatId, "❌ Lỗi: Chưa có bảng giá.");
-  }
-
+async function sendPriceList(chatId, showButtons) {
+  const { data: prices } = await supabase.from('key_prices').select('*').order('price', { ascending: true });
+  if (!prices || prices.length === 0) return await sendTelegramMessage(chatId, "❌ Chưa có bảng giá.");
   let msg = "💰 *BẢNG GIÁ* 💰\n━━━━━━━━━━━━━━━━━━\n";
   const buttons = [];
   prices.forEach(p => {
     msg += `🔹 *${p.name}*: ${p.price.toLocaleString('vi-VN')}đ\n`;
-    if (showBuyButtons && p.price > 0) {
-      buttons.push([{ text: `🛒 Mua ${p.name}`, callback_data: `buy_${p.key_type}` }]);
-    }
+    if (showButtons && p.price > 0) buttons.push([{ text: `🛒 Mua ${p.name}`, callback_data: `buy_${p.key_type}` }]);
   });
-
-  await sendTelegramMessage(chatId, msg, { reply_markup: showBuyButtons ? { inline_keyboard: buttons } : undefined });
+  await sendTelegramMessage(chatId, msg, { reply_markup: showButtons ? { inline_keyboard: buttons } : undefined });
 }
 
 async function handlePaymentRequest(chatId, type) {
   const { data: priceData } = await supabase.from('key_prices').select('*').eq('key_type', type).single();
   if (!priceData) return;
-
   const orderCode = Number(String(Date.now()).slice(-9));
   try {
     const paymentLink = await payos.createPaymentLink({
-      orderCode,
-      amount: priceData.price,
-      description: `Mua Key ${type}`,
-      cancelUrl: 'https://www.arikakhai.com',
-      returnUrl: 'https://www.arikakhai.com'
+      orderCode, amount: priceData.price, description: `Mua Key ${type}`,
+      cancelUrl: 'https://www.arikakhai.com', returnUrl: 'https://www.arikakhai.com'
     });
-
     await supabase.from('payments').insert({ order_code: orderCode, telegram_id: chatId, amount: priceData.price, key_type_requested: type });
-
-    await sendTelegramMessage(chatId, `💳 *THANH TOÁN GÓI ${priceData.name.toUpperCase()}*\n━━━━━━━━━━━━━━━━━━\n💰 Giá: *${priceData.price.toLocaleString('vi-VN')}đ*\nMã đơn: \`${orderCode}\``, {
+    await sendTelegramMessage(chatId, `💳 *THANH TOÁN*\n━━━━━━━━━━━━━━━━━━\n💰 Giá: *${priceData.price.toLocaleString('vi-VN')}đ*`, {
       reply_markup: { inline_keyboard: [[{ text: "🚀 THANH TOÁN NGAY", url: paymentLink.checkoutUrl }]] }
     });
   } catch (err) {
-    await sendTelegramMessage(chatId, "❌ Lỗi tạo link: " + err.message);
+    await sendTelegramMessage(chatId, `❌ Lỗi PayOS: ${err.message}`);
   }
 }
 
 async function handleSetPrice(chatId, text) {
   const parts = text.split(' ');
-  if (parts.length < 3) return await sendTelegramMessage(chatId, "Sử dụng: `/setprice [loại] [giá]`\nVí dụ: `/setprice month 150000`.");
-  
+  if (parts.length < 3) return;
   const type = parts[1];
   const price = parseInt(parts[2]);
-  const name = type === 'trial' ? 'Bản dùng thử' : 
-               type === 'day' ? 'Gói 1 Ngày' : 
-               type === 'month' ? 'Gói 1 Tháng' : 
-               type === 'forever' ? 'Gói Vĩnh Viễn' : `Gói ${type}`;
-
-  await sendTelegramMessage(chatId, `🔄 Đang thiết lập giá cho ${name}...`);
-
-  // Cách 1: Thử xóa trước
-  await supabase.from('key_prices').delete().eq('key_type', type);
-  
-  // Cách 2: Chèn mới hoàn toàn
-  const { error } = await supabase.from('key_prices').insert({ 
-    key_type: type, 
-    price: price,
-    name: name
-  });
-
-  if (error) {
-    // Nếu lỗi, thử Update (dành cho trường hợp bảng có khóa chính)
-    const { error: updateError } = await supabase.from('key_prices').update({ price, name }).eq('key_type', type);
-    if (updateError) {
-      await sendTelegramMessage(chatId, "❌ Lỗi Database: " + updateError.message);
-      return;
-    }
-  }
-  
-  await sendTelegramMessage(chatId, `✅ Đã thiết lập giá cho *${name}* là *${price.toLocaleString('vi-VN')}đ*`);
+  const name = type === 'trial' ? 'Bản dùng thử' : type === 'day' ? 'Gói 1 Ngày' : type === 'month' ? 'Gói 1 Tháng' : 'Gói Vĩnh Viễn';
+  await supabase.from('key_prices').upsert({ key_type: type, price, name }, { onConflict: 'key_type' });
+  await sendTelegramMessage(chatId, `✅ Đã cập nhật giá gói *${name}*`);
 }
 
 async function handleManualGenKey(chatId) {
   const key = 'KEY-' + Math.random().toString(36).substring(2, 10).toUpperCase();
   await supabase.from('access_keys').insert([{ key_code: key, is_used: false }]);
-  await sendTelegramMessage(chatId, `🔑 *KEY MỚI:* \`${key}\``);
+  await sendTelegramMessage(chatId, `🔑 *KEY:* \`${key}\``);
 }
 
 async function sendTelegramMessage(chatId, text, extra = {}) {
   const url = `https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`;
-  await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ chat_id: chatId, text, parse_mode: 'Markdown', ...extra })
-  });
+  await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ chat_id: chatId, text, parse_mode: 'Markdown', ...extra }) });
 }
