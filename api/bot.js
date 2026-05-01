@@ -23,7 +23,10 @@ export default async function handler(req, res) {
     const body = req.body;
     if (!body) return res.status(200).json({ ok: true });
 
-    if (!payos) payos = new PayOS(PAYOS_CLIENT_ID, PAYOS_API_KEY, PAYOS_CHECKSUM_KEY);
+    if (!payos) {
+      const PayOSConstructor = PayOS.default || PayOS;
+      payos = new PayOSConstructor(PAYOS_CLIENT_ID, PAYOS_API_KEY, PAYOS_CHECKSUM_KEY);
+    }
     if (!supabase) supabase = createClient(supabaseUrl, supabaseKey);
 
     if (body.callback_query) {
