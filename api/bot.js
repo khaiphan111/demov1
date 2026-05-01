@@ -145,17 +145,28 @@ async function handleSetPrice(chatId, text) {
                type === 'month' ? 'Gói 1 Tháng' : 
                type === 'forever' ? 'Gói Vĩnh Viễn' : `Gói ${type}`;
 
-  const { error } = await supabase.from('key_prices').upsert({ 
+  await sendTelegramMessage(chatId, `🔄 Đang thiết lập giá cho ${name}...`);
+
+  // Cách 1: Thử xóa trước
+  await supabase.from('key_prices').delete().eq('key_type', type);
+  
+  // Cách 2: Chèn mới hoàn toàn
+  const { error } = await supabase.from('key_prices').insert({ 
     key_type: type, 
     price: price,
     name: name
-  }, { onConflict: 'key_type' });
+  });
 
   if (error) {
-    await sendTelegramMessage(chatId, "❌ Lỗi: " + error.message);
-  } else {
-    await sendTelegramMessage(chatId, `✅ Đã thiết lập giá cho *${name}* là *${price.toLocaleString('vi-VN')}đ*`);
+    // Nếu lỗi, thử Update (dành cho trường hợp bảng có khóa chính)
+    const { error: updateError } = await supabase.from('key_prices').update({ price, name }).eq('key_type', type);
+    if (updateError) {
+      await sendTelegramMessage(chatId, "❌ Lỗi Database: " + updateError.message);
+      return;
+    }
   }
+  
+  await sendTelegramMessage(chatId, `✅ Đã thiết lập giá cho *${name}* là *${price.toLocaleString('vi-VN')}đ*`);
 }
 
 async function handleManualGenKey(chatId) {
