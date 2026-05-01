@@ -1,8 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 import { createRequire } from 'module';
 const require = createRequire(import.meta.url);
-const PayOSLib = require('@payos/node');
-const PayOS = PayOSLib.PayOS || PayOSLib;
 
 const TELEGRAM_TOKEN = '8319448508:AAG8OKP4aZ10g0kHA1BwijC_pn_PJheSEPs';
 const ADMIN_CHAT_ID = '5964340237';
@@ -25,21 +23,25 @@ export default async function handler(req, res) {
     if (!supabase) supabase = createClient(supabaseUrl, supabaseKey);
 
     if (!payos) {
+      const PayOSLib = require('@payos/node');
+      // Tìm Class thực sự (thử mọi khả năng)
+      let PayOSClass = PayOSLib.PayOS || PayOSLib.default || (typeof PayOSLib === 'function' ? PayOSLib : null);
+      
+      if (!PayOSClass && typeof PayOSLib === 'object') {
+         // Nếu vẫn không thấy, lấy thuộc tính đầu tiên là function
+         const firstFn = Object.values(PayOSLib).find(v => typeof v === 'function');
+         PayOSClass = firstFn || PayOSLib;
+      }
+
       try {
-        // Sử dụng require giúp tránh mọi lỗi interop
-        payos = new PayOS({
-          clientId: PAYOS_CLIENT_ID,
-          apiKey: PAYOS_API_KEY,
-          checksumKey: PAYOS_CHECKSUM_KEY
-        });
-      } catch (err) {
-        // Fallback cho bản cũ nếu bản mới lỗi
-        payos = new PayOS(PAYOS_CLIENT_ID, PAYOS_API_KEY, PAYOS_CHECKSUM_KEY);
+        payos = new PayOSClass({ clientId: PAYOS_CLIENT_ID, apiKey: PAYOS_API_KEY, checksumKey: PAYOS_CHECKSUM_KEY });
+      } catch (e) {
+        payos = new PayOSClass(PAYOS_CLIENT_ID, PAYOS_API_KEY, PAYOS_CHECKSUM_KEY);
       }
     }
 
     if (body.callback_query) {
-      const chatId = body.message ? body.message.chat.id.toString() : body.callback_query.from.id.toString();
+      const chatId = body.callback_query.from.id.toString();
       const data = body.callback_query.data;
       if (data.startsWith('buy_')) await handlePaymentRequest(chatId, data.replace('buy_', ''));
       return res.status(200).json({ ok: true });
@@ -57,19 +59,19 @@ export default async function handler(req, res) {
 
     return res.status(200).json({ ok: true });
   } catch (error) {
-    await sendTelegramMessage(ADMIN_CHAT_ID, `⚠️ *ERROR:* ${error.message}`);
+    await sendTelegramMessage(ADMIN_CHAT_ID, `⚠️ *ERR:* ${error.message}`);
     return res.status(200).json({ ok: true });
   }
 }
 
 async function sendWelcomeMessage(chatId) {
-  await sendTelegramMessage(chatId, `👋 *Chào mừng bạn!*\n━━━━━━━━━━━━━━━━━━\n🛒 Gõ /buy để mua Key.`);
+  await sendTelegramMessage(chatId, `👋 *Chào mừng!*\n🛒 Gõ /buy để mua Key.`);
 }
 
 async function sendPriceList(chatId, showButtons) {
   const { data: prices } = await supabase.from('key_prices').select('*').order('price', { ascending: true });
   if (!prices || prices.length === 0) return await sendTelegramMessage(chatId, "❌ Chưa có bảng giá.");
-  let msg = "💰 *BẢNG GIÁ* 💰\n━━━━━━━━━━━━━━━━━━\n";
+  let msg = "💰 *BẢNG GIÁ*\n";
   const buttons = [];
   prices.forEach(p => {
     msg += `🔹 *${p.name}*: ${p.price.toLocaleString('vi-VN')}đ\n`;
@@ -83,16 +85,33 @@ async function handlePaymentRequest(chatId, type) {
   if (!priceData) return;
   const orderCode = Number(String(Date.now()).slice(-9));
   try {
-    const paymentLink = await payos.createPaymentLink({
+    // Siêu dò tìm hàm tạo link
+    let target = payos.default || payos;
+    let createFn = target.createPaymentLink || target.createPaymentOrder || target.create;
+    
+    // Nếu vẫn không thấy, quét toàn bộ prototype
+    if (typeof createFn !== 'function') {
+      const proto = Object.getPrototypeOf(target);
+      if (proto) {
+        createFn = proto.createPaymentLink || proto.createPaymentOrder || proto.create;
+      }
+    }
+
+    if (typeof createFn !== 'function') {
+       throw new Error(`Không thấy hàm tạo link. Các hàm sẵn có: ${Object.getOwnPropertyNames(target).concat(Object.getOwnPropertyNames(Object.getPrototypeOf(target) || {})).filter(n => typeof target[n] === 'function').join(', ')}`);
+    }
+
+    const paymentLink = await createFn.call(target, {
       orderCode, amount: priceData.price, description: `Mua Key ${type}`,
       cancelUrl: 'https://www.arikakhai.com', returnUrl: 'https://www.arikakhai.com'
     });
-    await supabase.from('payments').insert({ order_code: orderCode, telegram_id: chatId, amount: priceData.price, key_type_requested: type });
-    await sendTelegramMessage(chatId, `💳 *THANH TOÁN*\n━━━━━━━━━━━━━━━━━━\n💰 Giá: *${priceData.price.toLocaleString('vi-VN')}đ*`, {
+
+    await supabase.from('payments').insert({ order_code: orderCode, telegram_id: chatId, amount: priceData.price, key_type_requested: type, status: 'pending' });
+    await sendTelegramMessage(chatId, `💳 *THANH TOÁN*\n💰 Giá: *${priceData.price.toLocaleString('vi-VN')}đ*`, {
       reply_markup: { inline_keyboard: [[{ text: "🚀 THANH TOÁN NGAY", url: paymentLink.checkoutUrl }]] }
     });
   } catch (err) {
-    await sendTelegramMessage(chatId, `❌ Lỗi tạo link: ${err.message}`);
+    await sendTelegramMessage(chatId, `❌ Lỗi: ${err.message}`);
   }
 }
 
