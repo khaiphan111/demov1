@@ -23,7 +23,11 @@ export default async function handler(req, res) {
     if (!payos) {
       const PayOSClass = PayOS.PayOS || PayOS.default || PayOS;
       if (typeof PayOSClass === 'function') {
-        payos = new PayOSClass(PAYOS_CLIENT_ID, PAYOS_API_KEY, PAYOS_CHECKSUM_KEY);
+        payos = new PayOSClass({
+          clientId: PAYOS_CLIENT_ID,
+          apiKey: PAYOS_API_KEY,
+          checksumKey: PAYOS_CHECKSUM_KEY
+        });
       }
     }
     if (!supabase) supabase = createClient(supabaseUrl, supabaseKey);
