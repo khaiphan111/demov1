@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
-import crypto from 'crypto';
+import { PayOS } from '@payos/node';
 
 const TELEGRAM_TOKEN = '8319448508:AAG8OKP4aZ10g0kHA1BwijC_pn_PJheSEPs';
 const ADMIN_CHAT_ID = '5964340237';
@@ -12,6 +12,7 @@ const supabaseUrl = 'https://jfakdzjxphypjtfwwoqp.supabase.co';
 const supabaseKey = 'sb_publishable_CEOW9PCaWqX4DCLE0PoJkg_Y-9pDxbe';
 
 let supabase;
+let payos;
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(200).send('Bot OK');
@@ -19,6 +20,9 @@ export default async function handler(req, res) {
   try {
     const body = req.body;
     if (!supabase) supabase = createClient(supabaseUrl, supabaseKey);
+    if (!payos) {
+      payos = new PayOS({ clientId: PAYOS_CLIENT_ID, apiKey: PAYOS_API_KEY, checksumKey: PAYOS_CHECKSUM_KEY });
+    }
 
     if (body.callback_query) {
       const chatId = body.callback_query.from.id.toString();
@@ -55,27 +59,12 @@ async function handlePaymentRequest(chatId, type) {
   const returnUrl = 'https://www.arikakhai.com';
 
   try {
-    // 1. Tạo chữ ký (Signature) thủ công không cần thư viện
-    const dataToSign = `amount=${amount}&cancelUrl=${cancelUrl}&description=${description}&orderCode=${orderCode}&returnUrl=${returnUrl}`;
-    const signature = crypto.createHmac('sha256', PAYOS_CHECKSUM_KEY).update(dataToSign).digest('hex');
+    const paymentData = {
+      orderCode, amount, description, cancelUrl, returnUrl
+    };
 
-    // 2. Gọi trực tiếp API PayOS qua fetch
-    const response = await fetch('https://api-merchant.payos.vn/v2/payment-requests', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-client-id': PAYOS_CLIENT_ID,
-        'x-api-key': PAYOS_API_KEY
-      },
-      body: JSON.stringify({
-        orderCode, amount, description, cancelUrl, returnUrl, signature
-      })
-    });
-
-    const result = await response.json();
-    if (result.code !== '00') throw new Error(result.desc || "Lỗi API PayOS");
-
-    const paymentLink = result.data.checkoutUrl;
+    const result = await payos.paymentRequests.create(paymentData);
+    const paymentLink = result.checkoutUrl;
 
     await supabase.from('payments').insert({
       order_code: orderCode, telegram_id: chatId, amount: amount, key_type_requested: type, status: 'pending'

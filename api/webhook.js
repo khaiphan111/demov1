@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
-import crypto from 'crypto';
+import { PayOS } from '@payos/node';
 
 const TELEGRAM_TOKEN = '8319448508:AAG8OKP4aZ10g0kHA1BwijC_pn_PJheSEPs';
 const PAYOS_CHECKSUM_KEY = '12d66715b54bae5a546de73716136378e9087999';
@@ -8,29 +8,33 @@ const supabaseUrl = 'https://jfakdzjxphypjtfwwoqp.supabase.co';
 const supabaseKey = 'sb_publishable_CEOW9PCaWqX4DCLE0PoJkg_Y-9pDxbe';
 
 let supabase;
+let payos;
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(200).send('Webhook OK');
 
   try {
     if (!supabase) supabase = createClient(supabaseUrl, supabaseKey);
+    if (!payos) {
+      payos = new PayOS({ clientId: PAYOS_CLIENT_ID, apiKey: PAYOS_API_KEY, checksumKey: PAYOS_CHECKSUM_KEY });
+    }
 
     const body = req.body;
     if (!body || body.desc === 'confirm-webhook' || !body.data) {
       return res.status(200).json({ success: true, message: 'Confirmed' });
     }
 
-    // 1. Xác thực chữ ký webhook thủ công
-    const data = body.data;
-    const sortedData = `amount=${data.amount}&description=${data.description}&orderCode=${data.orderCode}&paymentLinkId=${data.paymentLinkId}&reason=${data.reason}&status=${data.status}`;
-    const expectedSignature = crypto.createHmac('sha256', PAYOS_CHECKSUM_KEY).update(sortedData).digest('hex');
-
-    if (body.signature !== expectedSignature) {
-       console.error("Sai chữ ký Webhook");
-       return res.status(200).json({ success: false, message: 'Invalid signature' });
+    // 1. Xác thực chữ ký webhook bằng SDK
+    let webhookData;
+    try {
+      webhookData = payos.webhooks.verify(body);
+    } catch (e) {
+      console.error("Sai chữ ký Webhook", e);
+      return res.status(200).json({ success: false, message: 'Invalid signature' });
     }
 
     // 2. Xử lý khi thanh toán thành công
+    const data = webhookData;
     if (data.status === 'PAID') {
       const orderCode = data.orderCode;
       const { data: paymentRecord } = await supabase.from('payments').select('*').eq('order_code', orderCode).eq('status', 'pending').single();
