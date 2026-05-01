@@ -37,8 +37,12 @@ export default async function handler(req, res) {
       if (text === '/start') await sendTelegramMessage(chatId, "👋 Chào mừng bạn! Gõ /buy để mua Key.");
       else if (text === '/id') await sendTelegramMessage(chatId, `🆔 ID: \`${chatId}\``);
       else if (text === '/buy' || text === '/prices') await sendPriceList(chatId, text === '/buy');
-      else if (text.startsWith('/setprice')) await handleSetPrice(chatId, text);
-      else if (chatId === ADMIN_CHAT_ID && text === '/taokey') await handleManualGenKey(chatId);
+      else if (chatId === ADMIN_CHAT_ID) {
+        if (text.startsWith('/setprice')) await handleSetPrice(chatId, text);
+        else if (text.startsWith('/taokey')) await handleTaoKey(chatId, text);
+        else if (text.startsWith('/checkkey')) await handleCheckKey(chatId, text);
+        else if (text.startsWith('/thuhoi')) await handleThuHoiKey(chatId, text);
+      }
     }
 
     return res.status(200).json({ ok: true });
@@ -102,10 +106,56 @@ async function handleSetPrice(chatId, text) {
   await sendTelegramMessage(chatId, `✅ Đã cập nhật giá gói *${name}*`);
 }
 
-async function handleManualGenKey(chatId) {
-  const key = 'KEY-' + Math.random().toString(36).substring(2, 10).toUpperCase();
-  await supabase.from('access_keys').insert([{ key_code: key, is_used: false, is_active: true }]);
-  await sendTelegramMessage(chatId, `🔑 *KEY MỚI:* \`${key}\``);
+async function handleTaoKey(chatId, text) {
+  const parts = text.split(' ');
+  const type = parts[1] || 'trial';
+  const amount = parseInt(parts[2]) || 1;
+  
+  if (amount > 50) return await sendTelegramMessage(chatId, "❌ Chỉ được tạo tối đa 50 key 1 lần.");
+  
+  const keys = [];
+  let msg = `🔑 *ĐÃ TẠO ${amount} KEY GÓI ${type.toUpperCase()}*\n━━━━━━━━━━━━━━━━━━\n`;
+  
+  for (let i = 0; i < amount; i++) {
+    const key = `KEY-${type.toUpperCase()}-` + Math.random().toString(36).substring(2, 10).toUpperCase();
+    keys.push({ key_code: key, key_type: type, is_used: false, is_active: true });
+    msg += `\`${key}\`\n`;
+  }
+  
+  await supabase.from('access_keys').insert(keys);
+  await sendTelegramMessage(chatId, msg);
+}
+
+async function handleCheckKey(chatId, text) {
+  const parts = text.split(' ');
+  if (parts.length < 2) return await sendTelegramMessage(chatId, "❌ Vui lòng nhập mã Key. Ví dụ: `/checkkey KEY-DAY-1234`");
+  const keyCode = parts[1].trim();
+  
+  const { data: keyData } = await supabase.from('access_keys').select('*').eq('key_code', keyCode).single();
+  if (!keyData) return await sendTelegramMessage(chatId, `❌ Không tìm thấy Key: \`${keyCode}\``);
+  
+  const status = keyData.is_active ? (keyData.is_used ? "🔴 Đã sử dụng" : "🟢 Chưa sử dụng") : "⚫ Đã thu hồi";
+  
+  let msg = `🔍 *THÔNG TIN KEY*\n━━━━━━━━━━━━━━━━━━\n`;
+  msg += `🔑 Mã Key: \`${keyData.key_code}\`\n`;
+  msg += `📦 Loại gói: *${keyData.key_type || 'N/A'}*\n`;
+  msg += `📊 Trạng thái: *${status}*\n`;
+  if (keyData.hwid) msg += `💻 HWID Máy: \`${keyData.hwid}\`\n`;
+  if (keyData.expires_at) msg += `⏳ Hạn sử dụng: ${new Date(keyData.expires_at).toLocaleString('vi-VN')}\n`;
+  
+  await sendTelegramMessage(chatId, msg);
+}
+
+async function handleThuHoiKey(chatId, text) {
+  const parts = text.split(' ');
+  if (parts.length < 2) return await sendTelegramMessage(chatId, "❌ Vui lòng nhập mã Key. Ví dụ: `/thuhoi KEY-DAY-1234`");
+  const keyCode = parts[1].trim();
+  
+  const { data: keyData } = await supabase.from('access_keys').select('*').eq('key_code', keyCode).single();
+  if (!keyData) return await sendTelegramMessage(chatId, `❌ Không tìm thấy Key: \`${keyCode}\``);
+  
+  await supabase.from('access_keys').update({ is_active: false }).eq('key_code', keyCode);
+  await sendTelegramMessage(chatId, `✅ Đã thu hồi/vô hiệu hóa Key:\n\`${keyCode}\``);
 }
 
 async function sendTelegramMessage(chatId, text, extra = {}) {
