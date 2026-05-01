@@ -1,5 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
-import PayOS from '@payos/node';
+import { createRequire } from 'module';
+const require = createRequire(import.meta.url);
+const PayOS = require('@payos/node');
 
 const TELEGRAM_TOKEN = '8319448508:AAG8OKP4aZ10g0kHA1BwijC_pn_PJheSEPs';
 const ADMIN_CHAT_ID = '5964340237';
@@ -23,28 +25,20 @@ export default async function handler(req, res) {
 
     if (!payos) {
       try {
-        // Sử dụng cách khởi tạo đa năng để tìm đúng Class
-        const PayOSClass = (PayOS && PayOS.PayOS) ? PayOS.PayOS : (PayOS.default || PayOS);
-        
-        payos = new PayOSClass({
+        // Sử dụng require giúp tránh mọi lỗi interop
+        payos = new PayOS({
           clientId: PAYOS_CLIENT_ID,
           apiKey: PAYOS_API_KEY,
           checksumKey: PAYOS_CHECKSUM_KEY
         });
-        
-        // Kiểm tra xem có hàm createPaymentLink không, nếu không thử tìm hàm tương đương
-        if (typeof payos.createPaymentLink !== 'function') {
-           console.log("Tìm kiếm hàm tạo link thay thế...");
-           // Một số bản cũ dùng createPaymentOrder hoặc tương tự
-        }
       } catch (err) {
-        await sendTelegramMessage(ADMIN_CHAT_ID, `❌ Lỗi khởi tạo: ${err.message}`);
-        return res.status(200).json({ ok: true });
+        // Fallback cho bản cũ nếu bản mới lỗi
+        payos = new PayOS(PAYOS_CLIENT_ID, PAYOS_API_KEY, PAYOS_CHECKSUM_KEY);
       }
     }
 
     if (body.callback_query) {
-      const chatId = body.callback_query.message.chat.id.toString();
+      const chatId = body.message ? body.message.chat.id.toString() : body.callback_query.from.id.toString();
       const data = body.callback_query.data;
       if (data.startsWith('buy_')) await handlePaymentRequest(chatId, data.replace('buy_', ''));
       return res.status(200).json({ ok: true });
@@ -86,25 +80,13 @@ async function sendPriceList(chatId, showButtons) {
 async function handlePaymentRequest(chatId, type) {
   const { data: priceData } = await supabase.from('key_prices').select('*').eq('key_type', type).single();
   if (!priceData) return;
-  
   const orderCode = Number(String(Date.now()).slice(-9));
   try {
-    const paymentData = {
-      orderCode,
-      amount: priceData.price,
-      description: `Mua Key ${type}`,
-      cancelUrl: 'https://www.arikakhai.com',
-      returnUrl: 'https://www.arikakhai.com'
-    };
-
-    // Đảm bảo gọi đúng hàm tạo link
-    const createFn = payos.createPaymentLink || payos.createPaymentOrder || payos.create;
-    if (typeof createFn !== 'function') throw new Error("Không tìm thấy hàm tạo link thanh toán trong thư viện PayOS");
-
-    const paymentLink = await createFn.call(payos, paymentData);
-
-    await supabase.from('payments').insert({ order_code: orderCode, telegram_id: chatId, amount: priceData.price, key_type_requested: type, status: 'pending' });
-    
+    const paymentLink = await payos.createPaymentLink({
+      orderCode, amount: priceData.price, description: `Mua Key ${type}`,
+      cancelUrl: 'https://www.arikakhai.com', returnUrl: 'https://www.arikakhai.com'
+    });
+    await supabase.from('payments').insert({ order_code: orderCode, telegram_id: chatId, amount: priceData.price, key_type_requested: type });
     await sendTelegramMessage(chatId, `💳 *THANH TOÁN*\n━━━━━━━━━━━━━━━━━━\n💰 Giá: *${priceData.price.toLocaleString('vi-VN')}đ*`, {
       reply_markup: { inline_keyboard: [[{ text: "🚀 THANH TOÁN NGAY", url: paymentLink.checkoutUrl }]] }
     });

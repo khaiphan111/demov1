@@ -1,5 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
-import PayOS from '@payos/node';
+import { createRequire } from 'module';
+const require = createRequire(import.meta.url);
+const PayOS = require('@payos/node');
 
 const TELEGRAM_TOKEN = '8319448508:AAG8OKP4aZ10g0kHA1BwijC_pn_PJheSEPs';
 const ADMIN_CHAT_ID = '5964340237';
@@ -15,47 +17,40 @@ let payos;
 let supabase;
 
 export default async function handler(req, res) {
-  if (req.method !== 'POST') {
-    return res.status(200).send('Webhook is active');
-  }
+  if (req.method !== 'POST') return res.status(200).send('Webhook OK');
 
   try {
-    if (!payos) {
-      const PayOSClass = PayOS.default || PayOS;
-      payos = new PayOSClass({
-        clientId: PAYOS_CLIENT_ID,
-        apiKey: PAYOS_API_KEY,
-        checksumKey: PAYOS_CHECKSUM_KEY
-      });
-    }
     if (!supabase) supabase = createClient(supabaseUrl, supabaseKey);
+    if (!payos) {
+      try {
+        payos = new PayOS({ clientId: PAYOS_CLIENT_ID, apiKey: PAYOS_API_KEY, checksumKey: PAYOS_CHECKSUM_KEY });
+      } catch (err) {
+        payos = new PayOS(PAYOS_CLIENT_ID, PAYOS_API_KEY, PAYOS_CHECKSUM_KEY);
+      }
+    }
 
     const body = req.body;
-    
     if (!body || body.desc === 'confirm-webhook' || !body.data) {
       return res.status(200).json({ success: true, message: 'Confirmed' });
     }
 
-    if (payos) {
-      const webhookData = payos.verifyPaymentWebhookData(body);
-      if (webhookData && webhookData.orderCode) {
-        const orderCode = webhookData.orderCode;
-        const { data: paymentRecord } = await supabase.from('payments').select('*').eq('order_code', orderCode).eq('status', 'pending').single();
+    const webhookData = payos.verifyPaymentWebhookData(body);
+    if (webhookData && webhookData.orderCode) {
+      const orderCode = webhookData.orderCode;
+      const { data: paymentRecord } = await supabase.from('payments').select('*').eq('order_code', orderCode).eq('status', 'pending').single();
 
-        if (paymentRecord) {
-          const type = paymentRecord.key_type_requested;
-          const newKeyCode = 'KEY-' + type.toUpperCase() + '-' + Math.random().toString(36).substring(2, 10).toUpperCase();
-          await supabase.from('access_keys').insert({ key_code: newKeyCode, key_type: type, is_used: false, is_active: true });
-          await supabase.from('payments').update({ status: 'completed', key_generated: newKeyCode, completed_at: new Date().toISOString() }).eq('id', paymentRecord.id);
-          const successMsg = `✅ *THANH TOÁN THÀNH CÔNG*\n━━━━━━━━━━━━━━━━━━\nMã đơn: \`${orderCode}\`\n🔑 *Key:* \`${newKeyCode}\`\n📦 Gói: *${type.toUpperCase()}*`;
-          await sendTelegramMessage(paymentRecord.telegram_id, successMsg);
-        }
+      if (paymentRecord) {
+        const type = paymentRecord.key_type_requested;
+        const newKeyCode = 'KEY-' + type.toUpperCase() + '-' + Math.random().toString(36).substring(2, 10).toUpperCase();
+        await supabase.from('access_keys').insert({ key_code: newKeyCode, key_type: type, is_used: false, is_active: true });
+        await supabase.from('payments').update({ status: 'completed', key_generated: newKeyCode, completed_at: new Date().toISOString() }).eq('id', paymentRecord.id);
+        const successMsg = `✅ *THANH TOÁN THÀNH CÔNG*\n━━━━━━━━━━━━━━━━━━\nMã đơn: \`${orderCode}\`\n🔑 *Key:* \`${newKeyCode}\`\n📦 Gói: *${type.toUpperCase()}*`;
+        await sendTelegramMessage(paymentRecord.telegram_id, successMsg);
       }
     }
 
     return res.status(200).json({ success: true });
   } catch (error) {
-    console.error('Webhook Error:', error);
     return res.status(200).json({ success: false, error: error.message });
   }
 }
