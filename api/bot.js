@@ -9,20 +9,23 @@ const PAYOS_CHECKSUM_KEY = '12d66715b54bae5a546de73716136378e9087999';
 const supabaseUrl = 'https://jfakdzjxphypjtfwwoqp.supabase.co';
 const supabaseKey = 'sb_publishable_CEOW9PCaWqX4DCLE0PoJkg_Y-9pDxbe';
 
-let payosInstance;
-let supabaseClient;
+let globalPayOS;
+let globalSupabase;
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(200).send('OK');
 
   try {
     const body = req.body;
-    if (!supabaseClient) supabaseClient = createClient(supabaseUrl, supabaseKey);
+    if (!globalSupabase) globalSupabase = createClient(supabaseUrl, supabaseKey);
 
-    if (!payosInstance) {
-      // Cách khởi tạo chuẩn ESM cho PayOS 2.x
-      const PayOSConstructor = PayOS.PayOS || PayOS.default || PayOS;
-      payosInstance = new PayOSConstructor({
+    if (!globalPayOS) {
+      // Cách lấy Class PayOS an toàn nhất trong môi trường ESM
+      let PayOSClass = PayOS;
+      if (PayOS && PayOS.default) PayOSClass = PayOS.default;
+      if (PayOS && PayOS.PayOS) PayOSClass = PayOS.PayOS;
+      
+      globalPayOS = new PayOSClass({
         clientId: PAYOS_CLIENT_ID,
         apiKey: PAYOS_API_KEY,
         checksumKey: PAYOS_CHECKSUM_KEY
@@ -47,35 +50,36 @@ export default async function handler(req, res) {
     }
     return res.status(200).json({ ok: true });
   } catch (error) {
-    await sendMsg(ADMIN_CHAT_ID, `⚠️ Lỗi hệ thống: ${error.message}`);
+    await sendMsg(ADMIN_CHAT_ID, `⚠️ Lỗi: ${error.message}`);
     return res.status(200).json({ ok: true });
   }
 }
 
 async function handlePayment(chatId, type) {
-  const { data: priceData } = await supabaseClient.from('key_prices').select('*').eq('key_type', type).single();
-  if (!priceData) return;
+  const { data: pData } = await globalSupabase.from('key_prices').select('*').eq('key_type', type).single();
+  if (!pData) return;
   const orderCode = Number(String(Date.now()).slice(-9));
   try {
-    const paymentData = {
-      orderCode, amount: priceData.price, description: `Mua Key ${type}`,
+    const pPayload = {
+      orderCode, amount: pData.price, description: `Mua Key ${type}`,
       cancelUrl: 'https://www.arikakhai.com', returnUrl: 'https://www.arikakhai.com'
     };
     
-    // Gọi trực tiếp từ instance
-    const link = await payosInstance.createPaymentLink(paymentData);
+    // Thử gọi hàm với các biến thể tên (đề phòng thư viện bị đổi tên hàm)
+    const createFn = globalPayOS.createPaymentLink || globalPayOS.createPaymentOrder || globalPayOS.create;
+    const link = await createFn.bind(globalPayOS)(pPayload);
     
-    await supabaseClient.from('payments').insert({ order_code: orderCode, telegram_id: chatId, amount: priceData.price, key_type_requested: type });
-    await sendMsg(chatId, `💳 *Gói:* ${priceData.name}\n💰 *Giá:* ${priceData.price.toLocaleString('vi-VN')}đ`, {
+    await globalSupabase.from('payments').insert({ order_code: orderCode, telegram_id: chatId, amount: pData.price, key_type_requested: type, status: 'pending' });
+    await sendMsg(chatId, `💳 *Gói:* ${pData.name}\n💰 *Giá:* ${pData.price.toLocaleString('vi-VN')}đ`, {
       reply_markup: { inline_keyboard: [[{ text: "🚀 THANH TOÁN NGAY", url: link.checkoutUrl }]] }
     });
   } catch (err) {
-    await sendMsg(chatId, `❌ Lỗi PayOS: ${err.message}`);
+    await sendMsg(chatId, `❌ Lỗi: ${err.message}`);
   }
 }
 
 async function sendPrices(chatId, showBtns) {
-  const { data: prices } = await supabaseClient.from('key_prices').select('*').order('price', { ascending: true });
+  const { data: prices } = await globalSupabase.from('key_prices').select('*').order('price', { ascending: true });
   let msg = "💰 *BẢNG GIÁ*\n";
   const btns = [];
   prices?.forEach(p => {
@@ -87,13 +91,13 @@ async function sendPrices(chatId, showBtns) {
 
 async function handleSetPrice(chatId, text) {
   const p = text.split(' '); if (p.length < 3) return;
-  await supabaseClient.from('key_prices').upsert({ key_type: p[1], price: parseInt(p[2]), name: `Gói ${p[1]}` }, { onConflict: 'key_type' });
+  await globalSupabase.from('key_prices').upsert({ key_type: p[1], price: parseInt(p[2]), name: `Gói ${p[1]}` }, { onConflict: 'key_type' });
   await sendMsg(chatId, "✅ Đã cập nhật giá.");
 }
 
 async function handleTaoKey(chatId) {
   const k = 'KEY-' + Math.random().toString(36).substring(2, 10).toUpperCase();
-  await supabaseClient.from('access_keys').insert([{ key_code: k, is_used: false, is_active: true }]);
+  await globalSupabase.from('access_keys').insert([{ key_code: k, is_used: false, is_active: true }]);
   await sendMsg(chatId, `🔑 Key: \`${k}\``);
 }
 
