@@ -37,9 +37,9 @@ export default async function handler(req, res) {
       if (text === '/start') await sendTelegramMessage(chatId, "👋 Chào mừng bạn! Gõ /buy để mua Key.");
       else if (text === '/id') await sendTelegramMessage(chatId, `🆔 ID: \`${chatId}\``);
       else if (text === '/buy' || text === '/prices') await sendPriceList(chatId, text === '/buy');
+      else if (text === '/help' || text === '/admin') await handleHelp(chatId);
       else if (chatId === ADMIN_CHAT_ID) {
-        if (text === '/admin' || text === '/help') await handleAdminHelp(chatId);
-        else if (text.startsWith('/setprice')) await handleSetPrice(chatId, text);
+        if (text.startsWith('/setprice')) await handleSetPrice(chatId, text);
         else if (text.startsWith('/taokey')) await handleTaoKey(chatId, text);
         else if (text.startsWith('/checkkey')) await handleCheckKey(chatId, text);
         else if (text.startsWith('/thuhoi')) await handleThuHoiKey(chatId, text);
@@ -159,23 +159,26 @@ async function handleThuHoiKey(chatId, text) {
   await sendTelegramMessage(chatId, `✅ Đã thu hồi/vô hiệu hóa Key:\n\`${keyCode}\``);
 }
 
-async function handleAdminHelp(chatId) {
-  let msg = `⚙️ *BẢNG LỆNH DÀNH CHO ADMIN* ⚙️\n━━━━━━━━━━━━━━━━━━\n\n`;
-  msg += `*1. Cấu hình bảng giá:*\n`;
-  msg += `👉 \`/setprice [gói] [giá]\`\n`;
-  msg += `_Các gói: trial, day, month, lifetime_\n\n`;
+async function handleHelp(chatId) {
+  let msg = `⚙️ *HƯỚNG DẪN SỬ DỤNG* ⚙️\n━━━━━━━━━━━━━━━━━━\n\n`;
+  msg += `👉 \`/buy\` hoặc \`/prices\`: Xem bảng giá và mua Key\n`;
+  msg += `👉 \`/id\`: Lấy Chat ID hiện tại của bạn\n`;
+  msg += `👉 \`/help\`: Xem lại bảng hướng dẫn này\n\n`;
   
-  msg += `*2. Quản lý Key (License):*\n`;
-  msg += `👉 \`/taokey [gói] [số_lượng]\`\n`;
-  msg += `_Tạo nhiều Key cùng lúc (VD: /taokey day 5)_\n`;
-  msg += `👉 \`/checkkey [mã_key]\`\n`;
-  msg += `_Xem thông tin, trạng thái, người dùng của Key_\n`;
-  msg += `👉 \`/thuhoi [mã_key]\`\n`;
-  msg += `_Vô hiệu hóa Key lập tức_\n\n`;
-  
-  msg += `*3. Lệnh cơ bản (ai cũng dùng được):*\n`;
-  msg += `👉 \`/buy\` hoặc \`/prices\`: Xem bảng giá\n`;
-  msg += `👉 \`/id\`: Lấy Chat ID hiện tại\n`;
+  if (chatId === ADMIN_CHAT_ID) {
+    msg += `👑 *BẢNG LỆNH DÀNH CHO ADMIN* 👑\n━━━━━━━━━━━━━━━━━━\n`;
+    msg += `*1. Cấu hình bảng giá:*\n`;
+    msg += `👉 \`/setprice [gói] [giá]\`\n`;
+    msg += `_Các gói: trial, day, month, lifetime_\n\n`;
+    
+    msg += `*2. Quản lý Key (License):*\n`;
+    msg += `👉 \`/taokey [gói] [số_lượng]\`\n`;
+    msg += `_Tạo nhiều Key cùng lúc (VD: /taokey day 5)_\n`;
+    msg += `👉 \`/checkkey [mã_key]\`\n`;
+    msg += `_Xem thông tin, trạng thái, HWID của Key_\n`;
+    msg += `👉 \`/thuhoi [mã_key]\`\n`;
+    msg += `_Vô hiệu hóa Key lập tức_\n`;
+  }
   
   await sendTelegramMessage(chatId, msg);
 }
